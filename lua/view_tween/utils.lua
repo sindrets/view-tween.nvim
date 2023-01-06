@@ -29,6 +29,13 @@ function M.round(value)
   return math.floor(value + 0.5)
 end
 
+---Get the sign of a given number.
+---@param n number
+---@return -1|0|1
+function M.sign(n)
+  return (n > 0 and 1 or 0) - (n < 0 and 1 or 0)
+end
+
 ---Get the current time (ms)
 ---@return number
 function M.now()

@@ -36,7 +36,6 @@ end
 ---@class ViewTween
 ---@operator call : ViewTween
 ---@field winid integer
----@field line_wants integer
 ---@field target_line integer
 ---@field orig_line integer
 ---@field orig_view WinView
@@ -44,6 +43,7 @@ end
 ---@field max_line integer
 ---@field done boolean
 ---@field animation Animation
+---@field folds { [integer]?: { top?: integer, bottom?: integer } }
 local ViewTween = setmetatable({}, {
   __call = function(t, ...)
     local self = setmetatable({}, { __index = t })
@@ -58,17 +58,50 @@ function ViewTween:init(opt)
 
   self.min_line = opt.min_line or 1
   self.max_line = opt.max_line or api.nvim_buf_line_count(bufnr)
-  self.line_wants = opt.target_line
-  self.target_line = utils.clamp(opt.target_line, self.min_line, self.max_line)
   self.orig_view = utils.get_winview(self.winid)
   self.orig_line = self.orig_view.topline
   self.done = false
+
   self.animation = Animation({
     time_start = opt.time_start,
     time_end = opt.time_end,
     duration = opt.duration,
     progression_fn = opt.progression_fn or M.DEFAULT_PROGRESSION_FN,
   })
+
+  if opt.folds then
+    self.folds = opt.folds
+  else
+    self.folds = {}
+
+    api.nvim_win_call(self.winid, function()
+      local cur = 1
+      while cur < self.max_line do
+        local fold_start = vim.fn.foldclosed(cur)
+
+        if fold_start > -1 then
+          local fold_end = vim.fn.foldclosedend(cur)
+          if not self.folds[fold_start] then self.folds[fold_start] = {} end
+          if not self.folds[fold_end] then self.folds[fold_end] = {} end
+          self.folds[fold_start].bottom = fold_end
+          self.folds[fold_end].top = fold_start
+          cur = fold_end + 1
+        else
+          cur = cur + 1
+        end
+      end
+    end)
+  end
+
+  if opt.target_line then
+    self.scroll_delta = self:get_scroll_delta(self.orig_line, opt.target_line)
+  elseif opt.scroll_delta then
+    self.scroll_delta = opt.scroll_delta
+  else
+    error("One of 'target_line' or 'scroll_delta' must be specified!")
+  end
+
+  self.target_line = self:resolve_scroll_delta(self.orig_line, self.scroll_delta)
 end
 
 function ViewTween:invalidate()
@@ -80,31 +113,84 @@ function ViewTween:is_valid()
   return not self.done
 end
 
+---@param line_from integer
+---@param line_to integer
+---@return integer delta
+function ViewTween:get_scroll_delta(line_from, line_to)
+  line_from = math.max(line_from, 1)
+  line_to = math.min(line_to, self.max_line)
+  local sign = utils.sign(line_to - line_from)
+
+  if sign == 0 then return 0 end
+
+  local key = sign == -1 and "top" or "bottom"
+  local cur = line_from
+  local delta = 0
+
+  while (line_to - cur) * sign > 0 do
+    if self.folds[cur] and self.folds[cur][key] then
+      cur = self.folds[cur][key]
+    else
+      cur = cur + sign
+    end
+
+    delta = delta + sign
+  end
+
+  return delta
+end
+
+---@param line integer Current line
+---@param delta integer
+---@return integer target_line
+function ViewTween:resolve_scroll_delta(line, delta)
+  local sign = utils.sign(delta)
+
+  if sign == 0 then return line end
+
+  local key = sign == -1 and "top" or "bottom"
+  local ret = line
+
+  for _ = 1, delta * sign do
+    if self.folds[ret] and self.folds[ret][key] then
+      ret = self.folds[ret][key] + sign
+    else
+      ret = ret + sign
+    end
+  end
+
+  return utils.clamp(ret, self.min_line, self.max_line)
+end
+
+function ViewTween:resolve_cursor(line, topline)
+  topline = topline or utils.get_winview(self.winid).topline
+  local height = api.nvim_win_get_height(self.winid)
+  local so = vim.wo[self.winid].scrolloff
+  local min = self:resolve_scroll_delta(topline, so)
+  local max = self:resolve_scroll_delta(topline, height - so - 1)
+
+  return utils.clamp(line, min, max)
+end
+
 ---@return boolean stop
 function ViewTween:update()
   if not api.nvim_win_is_valid(self.winid) then return true end
 
-  local height = api.nvim_win_get_height(self.winid)
   local cur_lnum = api.nvim_win_get_cursor(self.winid)[1]
-  local so = vim.wo[self.winid].scrolloff
 
   if api.nvim_win_get_tabpage(self.winid) ~= api.nvim_get_current_tabpage() then
     utils.set_winview({
       topline = self.target_line,
-      lnum = utils.clamp(cur_lnum, self.target_line + so, self.target_line + height - so - 1),
+      lnum = self:resolve_cursor(cur_lnum, self.target_line),
     }, self.winid)
     return true
   end
 
   local p = self.animation:get_p()
-  local topline = utils.clamp(
-    utils.round(self.orig_line + (self.line_wants - self.orig_line) * p),
-    self.min_line,
-    self.max_line
-  )
+  local topline = self:resolve_scroll_delta(self.orig_line, self.scroll_delta * p)
   utils.set_winview({
     topline = topline,
-    lnum = utils.clamp(cur_lnum, topline + so, topline + height - so - 1),
+    lnum = self:resolve_cursor(cur_lnum, topline),
   }, self.winid)
 
   if topline == self.target_line then return true end
@@ -142,22 +228,21 @@ function M.scroll(winid, delta, duration)
   end
 
   duration = duration or M.DURATION
-  local view = utils.get_winview(winid)
-  local target_line = view.topline + delta
 
   if M.last_tween and M.last_tween:is_valid() then
     -- An animation is already in progress. Replace it with a continuation animation
     M.last_tween:invalidate()
     M.last_tween = ViewTween({
       duration = duration,
-      target_line = target_line,
+      scroll_delta = delta,
       progression_fn = M.DEFAULT_CONTINUATION_FN,
+      folds = M.last_tween.folds, -- Assume folds have not changed since we started the last tween
     })
     M.last_tween:start()
   else
     M.last_tween = ViewTween({
       duration = duration,
-      target_line = target_line,
+      scroll_delta = delta,
     })
     M.last_tween:start()
   end
