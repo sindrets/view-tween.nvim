@@ -70,4 +70,84 @@ function M.set_winview(view, winid)
   end)
 end
 
+---@param winid? integer
+function M.get_winline(winid)
+  local ret
+
+  api.nvim_win_call(winid or 0, function ()
+    ret = vim.fn.winline()
+  end)
+
+  return ret
+end
+
+---@param winid integer
+---@param line_from integer
+---@param line_to integer
+---@return integer delta
+function M.get_scroll_delta(winid, line_from, line_to)
+  local ret
+
+  api.nvim_win_call(winid, function()
+    local bufnr = api.nvim_win_get_buf(winid)
+    line_from = math.max(line_from, 1)
+    line_to = math.min(line_to, api.nvim_buf_line_count(bufnr))
+    local sign = M.sign(line_to - line_from)
+
+    if sign == 0 then ret = 0; return end
+
+    local fold_fn = sign == -1 and vim.fn.foldclosed or vim.fn.foldclosedend
+    local cur = line_from
+    local delta = 0
+
+    while (line_to - cur) * sign > 0 do
+      local fold_edge = fold_fn(cur)
+      if fold_edge then
+        cur = fold_edge + sign
+      else
+        cur = cur + sign
+      end
+
+      delta = delta + sign
+    end
+
+    ret = delta
+  end)
+
+  return ret
+end
+
+---@param winid integer
+---@param line integer
+---@param delta number
+---@return integer target_line
+function M.resolve_scroll_delta(winid, line, delta)
+  delta = M.round(delta)
+  local ret
+
+  api.nvim_win_call(winid, function()
+    local view = M.get_winview(winid)
+    local bufnr = api.nvim_win_get_buf(winid)
+    local sign = M.sign(delta)
+
+    if sign == 0 then ret = line; return end
+
+    local fold_fn = sign == -1 and vim.fn.foldclosed or vim.fn.foldclosedend
+    ret = line
+
+    for _ = view.topline, delta * sign do
+      local fold_edge = fold_fn(ret)
+      if fold_edge then
+        ret = fold_edge + sign
+      else
+        ret = ret + sign
+      end
+    end
+
+    ret = M.clamp(ret, 1, api.nvim_buf_line_count(bufnr))
+  end)
+
+  return ret
+end
+
 return M

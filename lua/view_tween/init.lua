@@ -129,7 +129,7 @@ function ViewTween:get_scroll_delta(line_from, line_to)
 
   while (line_to - cur) * sign > 0 do
     if self.folds[cur] and self.folds[cur][key] then
-      cur = self.folds[cur][key]
+      cur = self.folds[cur][key] + sign
     else
       cur = cur + sign
     end
@@ -220,13 +220,14 @@ function ViewTween:start()
 end
 
 ---@param winid integer
----@param delta integer
+---@param delta number
 ---@param duration? integer
 function M.scroll(winid, delta, duration)
   if not winid or winid == 0 then
     winid = api.nvim_get_current_win()
   end
 
+  delta = utils.round(delta)
   duration = duration or M.DURATION
 
   if M.last_tween and M.last_tween:is_valid() then
@@ -271,25 +272,24 @@ M.scroll_actions = {
   end,
   cursor_top = function(duration)
     return function()
-      local view = utils.get_winview()
       local so = vim.o.scrolloff --[[@as integer ]]
-      M.scroll(0, view.lnum - view.topline - so, duration)
+      local winln = utils.get_winline()
+      M.scroll(0, winln - so - 1, duration)
     end
   end,
   cursor_bottom = function(duration)
     return function()
-      local view = utils.get_winview()
       local height = api.nvim_win_get_height(0)
+      local winln = utils.get_winline()
       local so = vim.o.scrolloff --[[@as integer ]]
-      M.scroll(0, -(view.topline + height - view.lnum - so), duration)
+      M.scroll(0, -(height - winln - so), duration)
     end
   end,
   cursor_center = function(duration)
     return function()
-      local view = utils.get_winview()
       local height = api.nvim_win_get_height(0)
-      local center = view.topline + math.floor(height / 2)
-      M.scroll(0, view.lnum - center, duration)
+      local winln = utils.get_winline()
+      M.scroll(0, -(height / 2 - winln), duration)
     end
   end,
 }
