@@ -270,31 +270,43 @@ M.scroll_actions = {
       M.scroll(0, api.nvim_win_get_height(0), duration)
     end
   end,
-  cursor_top = function(duration)
-    return function()
-      local so = vim.o.scrolloff --[[@as integer ]]
-      local winln = utils.get_winline()
-      M.scroll(0, winln - so - 1, duration)
-    end
-  end,
-  cursor_bottom = function(duration)
+  cursor_top = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
+      local so = vim.wo.scrolloff --[[@as integer ]]
+      local scroll_height = height - so * 2
       local winln = utils.get_winline()
-      local so = vim.o.scrolloff --[[@as integer ]]
-      M.scroll(0, -(height - winln - so), duration)
+      local delta = winln - so - 1
+      local scale = delta_time_scale and (math.abs(delta) / scroll_height) or 1
+      M.scroll(0, delta, duration * scale)
     end
   end,
-  cursor_center = function(duration)
+  cursor_bottom = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
+      local so = vim.wo.scrolloff --[[@as integer ]]
+      local scroll_height = height - so * 2
       local winln = utils.get_winline()
-      M.scroll(0, -(height / 2 - winln), duration)
+      local delta = -(height - winln - so)
+      local scale = delta_time_scale and (math.abs(delta) / scroll_height) or 1
+      M.scroll(0, delta, duration * scale)
+    end
+  end,
+  cursor_center = function(duration, delta_time_scale)
+    return function()
+      local height = api.nvim_win_get_height(0)
+      local so = vim.wo.scrolloff --[[@as integer ]]
+      local scroll_height = height - so * 2
+      local winln = utils.get_winline()
+      local delta = -(height / 2 - winln)
+      local scale = delta_time_scale and (math.abs(delta) / (scroll_height / 2)) or 1
+      M.scroll(0, delta, duration * scale)
     end
   end,
 }
 
-M.DEFAULT_PROGRESSION_FN = M.parametric_sine(0.5)
+-- M.DEFAULT_PROGRESSION_FN = M.parametric_sine(0.5)
+M.DEFAULT_PROGRESSION_FN = M.parametric_ease_out(0.55)
 M.DEFAULT_CONTINUATION_FN = M.parametric_ease_out(0.55)
 M.ViewTween = ViewTween
 return M
