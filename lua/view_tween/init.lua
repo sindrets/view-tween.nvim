@@ -9,15 +9,22 @@ local M = {}
 M.MAX_FRAMERATE = 144
 M.DURATION = 250
 
----[Graph](https://www.desmos.com/calculator/c5egnupfgj)
+---[Graph](https://www.desmos.com/calculator/4spoyadbuy)
 ---@param k number # Steepness
-function M.parametric_sine(k)
+---@param m number # Horizontal bias
+function M.parametric_sine(k, m)
+  local function g(x)
+    if x <= 0 then return 0 end
+    if x >= 1 then return 1 end
+    return math.pow(1 - x, 2 * (m + 1 / 2)) * (-1) + 1
+  end
+
   ---@param x number # [0,1]
   ---@return number # Progression
   return function(x)
     if x <= 0 then return 0 end
     if x >= 1 then return 1 end
-    return math.pow(0.5 + (math.sin((x - 0.5) * math.pi) / 2), math.pow(2 * (1 - x), k))
+    return math.pow(0.5 + (math.sin((g(x) - 0.5) * math.pi) / 2), math.pow(2 * (1 - x), k))
   end
 end
 
@@ -234,6 +241,7 @@ function M.scroll(winid, delta, duration)
     -- An animation is already in progress. Replace it with a continuation animation
     M.last_tween:invalidate()
     M.last_tween = ViewTween({
+      time_start = utils.now() - 3, -- Accommodate for lost time from constructing a new tween
       duration = duration,
       scroll_delta = delta,
       progression_fn = M.DEFAULT_CONTINUATION_FN,
@@ -305,8 +313,8 @@ M.scroll_actions = {
   end,
 }
 
--- M.DEFAULT_PROGRESSION_FN = M.parametric_sine(0.5)
-M.DEFAULT_PROGRESSION_FN = M.parametric_ease_out(0.55)
+M.DEFAULT_PROGRESSION_FN = M.parametric_sine(0, 0.29)
+-- M.DEFAULT_PROGRESSION_FN = M.parametric_ease_out(0.55)
 M.DEFAULT_CONTINUATION_FN = M.parametric_ease_out(0.55)
 M.ViewTween = ViewTween
 return M
