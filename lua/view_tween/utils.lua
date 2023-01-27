@@ -82,6 +82,15 @@ function M.get_winline(winid)
 end
 
 ---@param winid integer
+---@return integer
+function M.get_scrolloff(winid)
+  winid = winid or 0
+  local height = api.nvim_win_get_height(winid)
+
+  return M.clamp(vim.wo[winid].scrolloff, 0, math.floor(height / 2))
+end
+
+---@param winid integer
 ---@param line_from integer
 ---@param line_to integer
 ---@return integer delta

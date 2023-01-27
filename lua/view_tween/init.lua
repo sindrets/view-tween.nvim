@@ -172,7 +172,7 @@ end
 function ViewTween:resolve_cursor(line, topline)
   topline = topline or utils.get_winview(self.winid).topline
   local height = api.nvim_win_get_height(self.winid)
-  local so = vim.wo[self.winid].scrolloff
+  local so = utils.get_scrolloff(self.winid)
   local min = self:resolve_scroll_delta(topline, so)
   local max = self:resolve_scroll_delta(topline, height - so - 1)
 
@@ -226,36 +226,40 @@ function ViewTween:start()
   step()
 end
 
----@param winid integer
----@param delta number
----@param duration? integer
-function M.scroll(winid, delta, duration)
-  if not winid or winid == 0 then
-    winid = api.nvim_get_current_win()
-  end
+M.scroll = debounce.throttle_trailing(
+  M.DURATION / 2,
+  true,
+  ---@param winid integer
+  ---@param delta number
+  ---@param duration? integer
+  vim.schedule_wrap(function(winid, delta, duration)
+    if not winid or winid == 0 then
+      winid = api.nvim_get_current_win()
+    end
 
-  delta = utils.round(delta)
-  duration = duration or M.DURATION
+    delta = utils.round(delta)
+    duration = duration or M.DURATION
 
-  if M.last_tween and M.last_tween:is_valid() then
-    -- An animation is already in progress. Replace it with a continuation animation
-    M.last_tween:invalidate()
-    M.last_tween = ViewTween({
-      time_start = utils.now() - 3, -- Accommodate for lost time from constructing a new tween
-      duration = duration,
-      scroll_delta = delta,
-      progression_fn = M.DEFAULT_CONTINUATION_FN,
-      folds = M.last_tween.folds, -- Assume folds have not changed since we started the last tween
-    })
-    M.last_tween:start()
-  else
-    M.last_tween = ViewTween({
-      duration = duration,
-      scroll_delta = delta,
-    })
-    M.last_tween:start()
-  end
-end
+    if M.last_tween and M.last_tween:is_valid() then
+      -- An animation is already in progress. Replace it with a continuation animation
+      M.last_tween:invalidate()
+      M.last_tween = ViewTween({
+        time_start = utils.now() - 1, -- Accommodate for lost time from constructing a new tween
+        duration = duration,
+        scroll_delta = delta,
+        progression_fn = M.DEFAULT_CONTINUATION_FN,
+        folds = M.last_tween.folds, -- Assume folds have not changed since we started the last tween
+      })
+      M.last_tween:start()
+    else
+      M.last_tween = ViewTween({
+        duration = duration,
+        scroll_delta = delta,
+      })
+      M.last_tween:start()
+    end
+  end)
+)
 
 M.scroll_actions = {
   half_page_up = function(duration)
@@ -281,7 +285,7 @@ M.scroll_actions = {
   cursor_top = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
-      local so = vim.wo.scrolloff --[[@as integer ]]
+      local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()
       local delta = winln - so - 1
@@ -292,7 +296,7 @@ M.scroll_actions = {
   cursor_bottom = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
-      local so = vim.wo.scrolloff --[[@as integer ]]
+      local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()
       local delta = -(height - winln - so)
@@ -303,7 +307,7 @@ M.scroll_actions = {
   cursor_center = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
-      local so = vim.wo.scrolloff --[[@as integer ]]
+      local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()
       local delta = -(height / 2 - winln)
