@@ -148,17 +148,18 @@ function ViewTween:get_scroll_delta(line_from, line_to)
 end
 
 ---@param line integer Current line
----@param delta integer
+---@param delta number
 ---@return integer target_line
 function ViewTween:resolve_scroll_delta(line, delta)
   local sign = utils.sign(delta)
 
   if sign == 0 then return line end
 
+  local idelta = utils.round(delta * sign)
   local key = sign == -1 and "top" or "bottom"
   local ret = line
 
-  for _ = 1, delta * sign do
+  for _ = 1, idelta do
     if self.folds[ret] and self.folds[ret][key] then
       ret = self.folds[ret][key] + sign
     else

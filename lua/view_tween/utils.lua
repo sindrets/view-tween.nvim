@@ -86,8 +86,14 @@ end
 function M.get_scrolloff(winid)
   winid = winid or 0
   local height = api.nvim_win_get_height(winid)
+  local so_opt = vim.wo[winid].scrolloff
+  local so = M.clamp(so_opt, 0, math.floor(height / 2))
 
-  return M.clamp(vim.wo[winid].scrolloff, 0, math.floor(height / 2))
+  if height % 2 == 0 and so_opt >= height / 2 then
+    so = so - 1
+  end
+
+  return so
 end
 
 ---@param winid integer
@@ -141,10 +147,11 @@ function M.resolve_scroll_delta(winid, line, delta)
 
     if sign == 0 then ret = line; return end
 
+    local idelta = M.round(delta * sign)
     local fold_fn = sign == -1 and vim.fn.foldclosed or vim.fn.foldclosedend
     ret = line
 
-    for _ = view.topline, delta * sign do
+    for _ = view.topline, idelta do
       local fold_edge = fold_fn(ret)
       if fold_edge then
         ret = fold_edge + sign
