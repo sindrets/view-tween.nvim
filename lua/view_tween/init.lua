@@ -282,26 +282,41 @@ M.scroll = debounce.throttle_trailing(
 )
 
 M.scroll_actions = {
+  --- Emulates |<C-U>|.
   half_page_up = function(duration)
     return function()
+      if vim.v.count > 0 then
+        -- Set the new 'scroll' value
+        vim.opt_local.scroll = vim.v.count
+      end
+
       M.scroll(0, -vim.wo.scroll, duration)
     end
   end,
+  --- Emulates |<C-D>|.
   half_page_down = function(duration)
     return function()
+      if vim.v.count > 0 then
+        -- Set the new 'scroll' value
+        vim.opt_local.scroll = vim.v.count
+      end
+
       M.scroll(0, vim.wo.scroll --[[@as integer ]], duration)
     end
   end,
+  --- Emulates |<C-B>|.
   page_up = function(duration)
     return function()
-      M.scroll(0, -api.nvim_win_get_height(0), duration)
+      M.scroll(0, - (vim.v.count1 * api.nvim_win_get_height(0)), duration)
     end
   end,
+  --- Emulates |<C-F>|.
   page_down = function(duration)
     return function()
-      M.scroll(0, api.nvim_win_get_height(0), duration)
+      M.scroll(0, vim.v.count1 * api.nvim_win_get_height(0), duration)
     end
   end,
+  --- Emulates |zt|.
   cursor_top = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
@@ -313,6 +328,7 @@ M.scroll_actions = {
       M.scroll(0, delta, duration * scale)
     end
   end,
+  --- Emulates |zb|.
   cursor_bottom = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
@@ -324,6 +340,7 @@ M.scroll_actions = {
       M.scroll(0, delta, duration * scale)
     end
   end,
+  --- Emulates |zz|.
   cursor_center = function(duration, delta_time_scale)
     return function()
       local height = api.nvim_win_get_height(0)
