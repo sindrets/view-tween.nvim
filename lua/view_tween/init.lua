@@ -9,6 +9,11 @@ local M = {}
 M.MAX_FRAMERATE = 144
 M.DURATION = 250
 
+M.cache = {
+  ---@type table<integer, ViewTween>
+  tweens = {},
+}
+
 ---[Graph](https://www.desmos.com/calculator/4spoyadbuy)
 ---@param k number # Steepness
 ---@param m number # Horizontal bias
@@ -207,24 +212,33 @@ function ViewTween:update()
 end
 
 function ViewTween:start()
-  local step
-  step = debounce.throttle_trailing(1000 / M.MAX_FRAMERATE, true, vim.schedule_wrap(function()
+  local loop
+
+  local function close()
+    loop:close()
+
+    if M.cache.tweens[self.winid] == self then
+      M.cache.tweens[self.winid] = nil
+    end
+  end
+
+  loop = debounce.throttle_trailing(1000 / M.MAX_FRAMERATE, true, vim.schedule_wrap(function()
     if not self:is_valid() then
-      step:close()
+      close()
       return
     end
 
     local stop = self:update()
 
     if stop or not self.animation:is_alive() then
-      step:close()
+      close()
       self:invalidate()
     else
-      step()
+      loop()
     end
   end))
 
-  step()
+  loop()
 end
 
 M.scroll = debounce.throttle_trailing(
@@ -240,24 +254,29 @@ M.scroll = debounce.throttle_trailing(
 
     delta = utils.round(delta)
     duration = duration or M.DURATION
+    local last_tween = M.cache.tweens[winid]
 
-    if M.last_tween and M.last_tween:is_valid() then
+    if last_tween and last_tween:is_valid() then
       -- An animation is already in progress. Replace it with a continuation animation
-      M.last_tween:invalidate()
-      M.last_tween = ViewTween({
+      last_tween:invalidate()
+      local new_tween = ViewTween({
+        winid = winid,
         time_start = utils.now() - 1, -- Accommodate for lost time from constructing a new tween
         duration = duration,
         scroll_delta = delta,
         progression_fn = M.DEFAULT_CONTINUATION_FN,
-        folds = M.last_tween.folds, -- Assume folds have not changed since we started the last tween
+        folds = last_tween.folds, -- Assume folds have not changed since we started the last tween
       })
-      M.last_tween:start()
+      M.cache.tweens[winid] = new_tween
+      new_tween:start()
     else
-      M.last_tween = ViewTween({
+      local new_tween = ViewTween({
+        winid = winid,
         duration = duration,
         scroll_delta = delta,
       })
-      M.last_tween:start()
+      M.cache.tweens[winid] = new_tween
+      new_tween:start()
     end
   end)
 )
