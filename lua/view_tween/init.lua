@@ -247,38 +247,42 @@ M.scroll = debounce.throttle_trailing(
   ---@param winid integer
   ---@param delta number
   ---@param duration? integer
-  vim.schedule_wrap(function(winid, delta, duration)
-    if not winid or winid == 0 then
-      winid = api.nvim_get_current_win()
-    end
+  function(winid, delta, duration)
+    local now = utils.now()
 
-    delta = utils.round(delta)
-    duration = duration or M.DURATION
-    local last_tween = M.cache.tweens[winid]
+    vim.schedule(function()
+      if not winid or winid == 0 then
+        winid = api.nvim_get_current_win()
+      end
 
-    if last_tween and last_tween:is_valid() then
-      -- An animation is already in progress. Replace it with a continuation animation
-      last_tween:invalidate()
-      local new_tween = ViewTween({
-        winid = winid,
-        time_start = utils.now() - 1, -- Accommodate for lost time from constructing a new tween
-        duration = duration,
-        scroll_delta = delta,
-        progression_fn = M.DEFAULT_CONTINUATION_FN,
-        folds = last_tween.folds, -- Assume folds have not changed since we started the last tween
-      })
-      M.cache.tweens[winid] = new_tween
-      new_tween:start()
-    else
-      local new_tween = ViewTween({
-        winid = winid,
-        duration = duration,
-        scroll_delta = delta,
-      })
-      M.cache.tweens[winid] = new_tween
-      new_tween:start()
-    end
-  end)
+      delta = utils.round(delta)
+      duration = duration or M.DURATION
+      local last_tween = M.cache.tweens[winid]
+
+      if last_tween and last_tween:is_valid() then
+        -- An animation is already in progress. Replace it with a continuation animation
+        last_tween:invalidate()
+        local new_tween = ViewTween({
+          winid = winid,
+          time_start = now,
+          duration = duration,
+          scroll_delta = delta,
+          progression_fn = M.DEFAULT_CONTINUATION_FN,
+          folds = last_tween.folds, -- Assume folds have not changed since we started the last tween
+        })
+        M.cache.tweens[winid] = new_tween
+        new_tween:start()
+      else
+        local new_tween = ViewTween({
+          winid = winid,
+          duration = duration,
+          scroll_delta = delta,
+        })
+        M.cache.tweens[winid] = new_tween
+        new_tween:start()
+      end
+    end)
+  end
 )
 
 M.scroll_actions = {
