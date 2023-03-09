@@ -177,7 +177,7 @@ end
 
 function ViewTween:resolve_cursor(line, topline)
   topline = topline or utils.get_winview(self.winid).topline
-  local height = api.nvim_win_get_height(self.winid)
+  local height = utils.get_win_height(self.winid)
   local so = utils.get_scrolloff(self.winid)
   local min = self:resolve_scroll_delta(topline, so)
   local max = self:resolve_scroll_delta(topline, height - so - 1)
@@ -311,19 +311,19 @@ M.scroll_actions = {
   --- Emulates |<C-B>|.
   page_up = function(duration)
     return function()
-      M.scroll(0, - (vim.v.count1 * api.nvim_win_get_height(0)), duration)
+      M.scroll(0, - (vim.v.count1 * utils.get_win_height(0)), duration)
     end
   end,
   --- Emulates |<C-F>|.
   page_down = function(duration)
     return function()
-      M.scroll(0, vim.v.count1 * api.nvim_win_get_height(0), duration)
+      M.scroll(0, vim.v.count1 * utils.get_win_height(0), duration)
     end
   end,
   --- Emulates |zt|.
   cursor_top = function(duration, delta_time_scale)
     return function()
-      local height = api.nvim_win_get_height(0)
+      local height = utils.get_win_height(0)
       local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()
@@ -335,7 +335,7 @@ M.scroll_actions = {
   --- Emulates |zb|.
   cursor_bottom = function(duration, delta_time_scale)
     return function()
-      local height = api.nvim_win_get_height(0)
+      local height = utils.get_win_height(0)
       local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()
@@ -347,7 +347,7 @@ M.scroll_actions = {
   --- Emulates |zz|.
   cursor_center = function(duration, delta_time_scale)
     return function()
-      local height = api.nvim_win_get_height(0)
+      local height = utils.get_win_height(0)
       local so = utils.get_scrolloff(0)
       local scroll_height = height - so * 2
       local winln = utils.get_winline()

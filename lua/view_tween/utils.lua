@@ -1,6 +1,8 @@
 local uv = vim.loop
 local api = vim.api
 
+local HAS_NVIM_0_8 = vim.fn.has("nvim-0.8") == 1
+
 local M = {}
 
 ---@class WinView
@@ -70,6 +72,19 @@ function M.set_winview(view, winid)
   end)
 end
 
+---Get effective window height.
+---@param winid integer
+---@return integer
+function M.get_win_height(winid)
+  local height = api.nvim_win_get_height(winid)
+
+  if not HAS_NVIM_0_8 then
+    return height
+  end
+
+  return height - (vim.wo[winid].winbar ~= "" and 1 or 0)
+end
+
 ---@param winid? integer
 function M.get_winline(winid)
   local ret
@@ -85,7 +100,7 @@ end
 ---@return integer
 function M.get_scrolloff(winid)
   winid = winid or 0
-  local height = api.nvim_win_get_height(winid)
+  local height = M.get_win_height(winid)
   local so_opt = vim.wo[winid].scrolloff
   local so = M.clamp(so_opt, 0, math.floor(height / 2))
 
