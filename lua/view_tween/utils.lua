@@ -111,6 +111,23 @@ function M.get_scrolloff(winid)
   return so
 end
 
+---Set the (1,0)-indexed cursor position without having to worry about
+---out-of-bounds coordinates. The line number is clamped to the number of lines
+---in the target buffer. Respects `curswant`.
+---@param winid integer
+---@param line? integer
+---@param column? integer
+function M.set_cursor(winid, line, column)
+  local bufnr = api.nvim_win_get_buf(winid)
+  line = M.clamp(line or 1, 1, api.nvim_buf_line_count(bufnr))
+  local line_text = api.nvim_buf_get_lines(bufnr, line - 1, line, false)[1]
+  ---@diagnostic disable-next-line: redundant-parameter
+  local curswant = vim.fn.getcurpos(winid)[5]
+  column = math.max(0, math.min(column or curswant, api.nvim_strwidth(line_text)))
+
+  pcall(api.nvim_win_set_cursor, winid, { line, column })
+end
+
 ---@param winid integer
 ---@param line_from integer
 ---@param line_to integer

@@ -53,6 +53,7 @@ end
 ---@field orig_view WinView
 ---@field min_line integer
 ---@field max_line integer
+---@field last_cursor { [1]: integer, [2]: integer }
 ---@field done boolean
 ---@field animation Animation
 ---@field folds { [integer]?: { top?: integer, bottom?: integer } }
@@ -179,7 +180,9 @@ function ViewTween:resolve_cursor(line, topline)
   topline = topline or utils.get_winview(self.winid).topline
   local height = utils.get_win_height(self.winid)
   local so = utils.get_scrolloff(self.winid)
-  local min = self:resolve_scroll_delta(topline, so)
+
+  -- If the topline is less than the scrolloff: disregard the scrolloff
+  local min = topline < so and topline or self:resolve_scroll_delta(topline, so)
   local max = self:resolve_scroll_delta(topline, height - so - 1)
 
   return utils.clamp(line, min, max)
@@ -199,14 +202,45 @@ function ViewTween:update()
     return true
   end
 
+  local cursor = api.nvim_win_get_cursor(self.winid)
   local p = self.animation:get_p()
-  local topline = self:resolve_scroll_delta(self.orig_line, self.scroll_delta * p)
-  utils.set_winview({
-    topline = topline,
-    lnum = self:resolve_cursor(cur_lnum, topline),
-  }, self.winid)
+  local topline, cursorline
 
-  if topline == self.target_line then return true end
+  if self.last_cursor then
+    -- We have already scrolled to the top.
+    -- Animate the cursor for the remaining duration of the tween.
+    cursorline = self:resolve_scroll_delta( self.last_cursor[1], self.scroll_delta * p)
+    utils.set_cursor(self.winid, cursorline)
+  else
+    topline = self:resolve_scroll_delta(self.orig_line, self.scroll_delta * p)
+    utils.set_winview({
+      topline = topline,
+      lnum = self:resolve_cursor(cur_lnum, topline),
+    }, self.winid)
+  end
+
+  if self.last_cursor and (cursor[1] == 1 and self.scroll_delta < 0) then
+    -- The cursor has reached the top of the window: terminate
+    return true
+  end
+
+  if topline == self.target_line then
+    if topline == 1 then
+      if cursor[1] == 1 then
+        -- We have reached the target topline and the cursor is on line 1:
+        -- terminate
+        return true
+      end
+
+      self.last_cursor = cursor
+      self.scroll_delta = self.scroll_delta - self:get_scroll_delta(self.orig_line, self.target_line) - 1
+
+      return false
+    end
+
+    -- We have reached the target: terminate
+    return true
+  end
 
   return false
 end
