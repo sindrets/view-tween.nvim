@@ -210,7 +210,8 @@ function ViewTween:update()
     -- We have already scrolled to the top.
     -- Animate the cursor for the remaining duration of the tween.
     cursorline = self:resolve_scroll_delta( self.last_cursor[1], self.scroll_delta * p)
-    utils.set_cursor(self.winid, cursorline)
+    utils.set_cursor(self.winid, cursorline, 0)
+    utils.set_winview({ curswant = self.orig_view.curswant }, self.winid)
   else
     topline = self:resolve_scroll_delta(self.orig_line, self.scroll_delta * p)
     utils.set_winview({

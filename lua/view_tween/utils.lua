@@ -120,10 +120,9 @@ end
 function M.set_cursor(winid, line, column)
   local bufnr = api.nvim_win_get_buf(winid)
   line = M.clamp(line or 1, 1, api.nvim_buf_line_count(bufnr))
-  local line_text = api.nvim_buf_get_lines(bufnr, line - 1, line, false)[1]
   ---@diagnostic disable-next-line: redundant-parameter
-  local curswant = vim.fn.getcurpos(winid)[5]
-  column = math.max(0, math.min(column or curswant, api.nvim_strwidth(line_text)))
+  local curswant = vim.fn.getcurpos(winid)[5] - 1
+  column = math.max(0, column or curswant)
 
   pcall(api.nvim_win_set_cursor, winid, { line, column })
 end
