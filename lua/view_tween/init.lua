@@ -1,6 +1,7 @@
 local utils = require("view_tween.utils")
 local Animation = require("view_tween.animation")
 local debounce = require("view_tween.debounce")
+local ffi = require("view_tween.ffi")
 
 local api = vim.api
 
@@ -66,7 +67,8 @@ local ViewTween = setmetatable({}, {
 })
 
 function ViewTween:init(opt)
-  self.winid = opt.winid or api.nvim_get_current_win()
+  self.winid = opt.winid
+  if not self.winid or self.winid == 0 then self.winid = api.nvim_get_current_win() end
   local bufnr = api.nvim_win_get_buf(self.winid)
 
   self.min_line = opt.min_line or 1
@@ -87,23 +89,21 @@ function ViewTween:init(opt)
   else
     self.folds = {}
 
-    api.nvim_win_call(self.winid, function()
-      local cur = 1
-      while cur < self.max_line do
-        local fold_start = vim.fn.foldclosed(cur)
+    local cur = 1
+    while cur < self.max_line do
+      local fold_info = ffi.fold_info(self.winid, cur)
 
-        if fold_start > -1 then
-          local fold_end = vim.fn.foldclosedend(cur)
-          if not self.folds[fold_start] then self.folds[fold_start] = {} end
-          if not self.folds[fold_end] then self.folds[fold_end] = {} end
-          self.folds[fold_start].bottom = fold_end
-          self.folds[fold_end].top = fold_start
-          cur = fold_end + 1
-        else
-          cur = cur + 1
-        end
+      if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
+        local fold_end = fold_info.start + fold_info.rem_lines - 1
+        if not self.folds[fold_info.start] then self.folds[fold_info.start] = {} end
+        if not self.folds[fold_end] then self.folds[fold_end] = {} end
+        self.folds[fold_info.start].bottom = fold_end
+        self.folds[fold_end].top = fold_info.start
+        cur = fold_end + 1
+      else
+        cur = cur + 1
       end
-    end)
+    end
   end
 
   if opt.target_line then

@@ -1,3 +1,5 @@
+local ffi = require("view_tween.ffi")
+
 local uv = vim.loop
 local api = vim.api
 
@@ -134,21 +136,27 @@ end
 function M.get_scroll_delta(winid, line_from, line_to)
   local ret
 
-  api.nvim_win_call(winid, function()
-    local bufnr = api.nvim_win_get_buf(winid)
-    line_from = math.max(line_from, 1)
-    line_to = math.min(line_to, api.nvim_buf_line_count(bufnr))
-    local sign = M.sign(line_to - line_from)
+  local bufnr = api.nvim_win_get_buf(winid)
+  line_from = math.max(line_from, 1)
+  line_to = math.min(line_to, api.nvim_buf_line_count(bufnr))
+  local sign = M.sign(line_to - line_from)
 
-    if sign == 0 then ret = 0; return end
-
-    local fold_fn = sign == -1 and vim.fn.foldclosed or vim.fn.foldclosedend
+  if sign == 0 then
+    ret = 0
+  else
     local cur = line_from
     local delta = 0
+    local fold_edge
 
     while (line_to - cur) * sign > 0 do
-      local fold_edge = fold_fn(cur)
-      if fold_edge then
+      local fold_info = ffi.fold_info(winid, cur)
+
+      if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
+        if sign == -1 then
+          fold_edge = fold_info.start
+        else
+          fold_edge = cur + fold_info.rem_lines - 1
+        end
         cur = fold_edge + sign
       else
         cur = cur + sign
@@ -158,7 +166,7 @@ function M.get_scroll_delta(winid, line_from, line_to)
     end
 
     ret = delta
-  end)
+  end
 
   return ret
 end
