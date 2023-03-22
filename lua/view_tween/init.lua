@@ -50,14 +50,15 @@ end
 ---@operator call : ViewTween
 ---@field winid integer
 ---@field target_line integer
----@field orig_line integer
+---@field orig_topline integer
 ---@field orig_view WinView
 ---@field min_line integer
 ---@field max_line integer
----@field last_cursor { [1]: integer, [2]: integer }
+---@field lock_cursor boolean
+---@field cursor_from { [1]: integer, [2]: integer }
 ---@field done boolean
 ---@field animation Animation
----@field folds { [integer]?: { top?: integer, bottom?: integer } }
+---@field folds FoldMap
 local ViewTween = setmetatable({}, {
   __call = function(t, ...)
     local self = setmetatable({}, { __index = t })
@@ -65,6 +66,83 @@ local ViewTween = setmetatable({}, {
     return self
   end,
 })
+
+---@class FoldMap
+---@field [integer] { top?: integer, bottom?: integer }
+
+---Find closed folds in the given line range. Nested folds inside a closed fold
+---are ignored.
+---@param winid integer
+---@param line_from integer
+---@param line_to integer
+---@return FoldMap
+local function find_folds_range(winid, line_from, line_to)
+  local ret = {}
+  local sign = utils.sign(line_to - line_from)
+  local cur = line_from
+  local fold_info, fold_edge, fold_end
+
+  while (line_to - cur) * sign > 0 do
+    fold_info = ffi.fold_info(winid, cur)
+
+    if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
+      fold_end = cur + fold_info.rem_lines - 1
+
+      if not ret[fold_info.start] then ret[fold_info.start] = {} end
+      if not ret[fold_end] then ret[fold_end] = {} end
+      ret[fold_info.start].bottom = fold_end
+      ret[fold_end].top = fold_info.start
+
+      if sign == -1 then
+        fold_edge = fold_info.start
+      else
+        fold_edge = cur + fold_info.rem_lines - 1
+      end
+      cur = fold_edge + sign
+    else
+      cur = cur + sign
+    end
+  end
+
+  return ret
+end
+
+---Find closed folds between the given line and the given scroll distance.
+---Nested folds inside a closed fold are ignored.
+---@param winid integer
+---@param line_from integer
+---@param delta integer
+---@return FoldMap
+local function find_folds_delta(winid, line_from, delta)
+  local ret = {}
+  local sign = utils.sign(delta)
+  local cur = line_from
+  local fold_info, fold_edge, fold_end
+
+  for _ = 1, math.abs(delta) do
+    fold_info = ffi.fold_info(winid, cur)
+
+    if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
+      fold_end = cur + fold_info.rem_lines - 1
+
+      if not ret[fold_info.start] then ret[fold_info.start] = {} end
+      if not ret[fold_end] then ret[fold_end] = {} end
+      ret[fold_info.start].bottom = fold_end
+      ret[fold_end].top = fold_info.start
+
+      if sign == -1 then
+        fold_edge = fold_info.start
+      else
+        fold_edge = cur + fold_info.rem_lines - 1
+      end
+      cur = fold_edge + sign
+    else
+      cur = cur + sign
+    end
+  end
+
+  return ret
+end
 
 function ViewTween:init(opt)
   self.winid = opt.winid
@@ -74,8 +152,18 @@ function ViewTween:init(opt)
   self.min_line = opt.min_line or 1
   self.max_line = opt.max_line or api.nvim_buf_line_count(bufnr)
   self.orig_view = utils.get_winview(self.winid)
-  self.orig_line = self.orig_view.topline
+  self.orig_topline = self.orig_view.topline
+  ---@diagnostic disable-next-line: redundant-parameter
+  self.orig_botline = vim.fn.line("w$", self.winid)
+  self.lock_cursor = opt.lock_cursor or false
   self.done = false
+
+  local fold_info_max = ffi.fold_info(self.winid, self.max_line)
+  if fold_info_max.start ~= 0 and fold_info_max.rem_lines ~= 0 then
+    self.max_line = fold_info_max.start
+  end
+
+  self.max_line = math.max(1, self.max_line - utils.get_scrolloff(self.winid))
 
   self.animation = Animation({
     time_start = opt.time_start,
@@ -85,36 +173,36 @@ function ViewTween:init(opt)
   })
 
   if opt.folds then
+    -- Use pre-calculated folds
     self.folds = opt.folds
   else
-    self.folds = {}
+    if opt.target_line then
+      local sign = utils.sign(opt.target_line - self.orig_topline)
+      -- Set range start to viewport edge
+      local line_from = sign == 1 and self.orig_topline or self.orig_botline
+      -- Set range end to target line + additional buffer of window height
+      local line_to = opt.target_line + (api.nvim_win_height(self.winid) * sign)
+      self.folds = find_folds_range(self.winid, line_from, line_to)
 
-    local cur = 1
-    while cur < self.max_line do
-      local fold_info = ffi.fold_info(self.winid, cur)
-
-      if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
-        local fold_end = fold_info.start + fold_info.rem_lines - 1
-        if not self.folds[fold_info.start] then self.folds[fold_info.start] = {} end
-        if not self.folds[fold_end] then self.folds[fold_end] = {} end
-        self.folds[fold_info.start].bottom = fold_end
-        self.folds[fold_end].top = fold_info.start
-        cur = fold_end + 1
-      else
-        cur = cur + 1
-      end
+    elseif opt.scroll_delta then
+      local sign = utils.sign(opt.scroll_delta)
+      -- Set range start to viewport edge
+      local line_from = sign == 1 and self.orig_topline or self.orig_botline
+      -- Set delta to scroll_delta + additional buffer of window height
+      local delta = opt.scroll_delta + (api.nvim_win_get_height(self.winid) * sign)
+      self.folds = find_folds_delta(self.winid, line_from, delta)
     end
   end
 
   if opt.target_line then
-    self.scroll_delta = self:get_scroll_delta(self.orig_line, opt.target_line)
+    self.scroll_delta = self:get_scroll_delta(self.orig_topline, opt.target_line)
   elseif opt.scroll_delta then
     self.scroll_delta = opt.scroll_delta
   else
     error("One of 'target_line' or 'scroll_delta' must be specified!")
   end
 
-  self.target_line = self:resolve_scroll_delta(self.orig_line, self.scroll_delta)
+  self.target_line = self:resolve_scroll_delta(self.orig_topline, self.scroll_delta)
 end
 
 function ViewTween:invalidate()
@@ -130,6 +218,7 @@ end
 ---@param line_to integer
 ---@return integer delta
 function ViewTween:get_scroll_delta(line_from, line_to)
+  assert(self.folds, "Fold ranges must be found before calculating scroll delta!")
   line_from = math.max(line_from, 1)
   line_to = math.min(line_to, self.max_line)
   local sign = utils.sign(line_to - line_from)
@@ -157,6 +246,7 @@ end
 ---@param delta number
 ---@return integer target_line
 function ViewTween:resolve_scroll_delta(line, delta)
+  assert(self.folds, "Fold ranges must be found before resolving scroll delta!")
   local sign = utils.sign(delta)
 
   if sign == 0 then return line end
@@ -206,35 +296,35 @@ function ViewTween:update()
   local p = self.animation:get_p()
   local topline, cursorline
 
-  if self.last_cursor then
+  if self.cursor_from then
     -- We have already scrolled to the top.
     -- Animate the cursor for the remaining duration of the tween.
-    cursorline = self:resolve_scroll_delta( self.last_cursor[1], self.scroll_delta * p)
+    cursorline = self:resolve_scroll_delta( self.cursor_from[1], self.scroll_delta * p)
     utils.set_cursor(self.winid, cursorline, 0)
     utils.set_winview({ curswant = self.orig_view.curswant }, self.winid)
   else
-    topline = self:resolve_scroll_delta(self.orig_line, self.scroll_delta * p)
+    topline = self:resolve_scroll_delta(self.orig_topline, self.scroll_delta * p)
     utils.set_winview({
       topline = topline,
       lnum = self:resolve_cursor(cur_lnum, topline),
     }, self.winid)
   end
 
-  if self.last_cursor and (cursor[1] == 1 and self.scroll_delta < 0) then
+  if self.cursor_from and (cursor[1] == 1 and self.scroll_delta < 0) then
     -- The cursor has reached the top of the window: terminate
     return true
   end
 
   if topline == self.target_line then
-    if topline == 1 then
+    if not self.lock_cursor and topline == 1 then
       if cursor[1] == 1 then
         -- We have reached the target topline and the cursor is on line 1:
         -- terminate
         return true
       end
 
-      self.last_cursor = cursor
-      self.scroll_delta = self.scroll_delta - self:get_scroll_delta(self.orig_line, self.target_line) - 1
+      self.cursor_from = cursor
+      self.scroll_delta = self.scroll_delta - self:get_scroll_delta(self.orig_topline, self.target_line) - 1
 
       return false
     end
@@ -282,7 +372,8 @@ M.scroll = debounce.throttle_trailing(
   ---@param winid integer
   ---@param delta number
   ---@param duration? integer
-  function(winid, delta, duration)
+  ---@param lock_cursor boolean
+  function(winid, delta, duration, lock_cursor)
     local now = utils.now()
 
     vim.schedule(function()
@@ -301,9 +392,10 @@ M.scroll = debounce.throttle_trailing(
           winid = winid,
           time_start = now,
           duration = duration,
+          lock_cursor = lock_cursor,
           scroll_delta = delta,
           progression_fn = M.DEFAULT_CONTINUATION_FN,
-          folds = last_tween.folds, -- Assume folds have not changed since we started the last tween
+          -- folds = last_tween.folds, -- Assume folds have not changed since we started the last tween
         })
         M.cache.tweens[winid] = new_tween
         new_tween:start()
@@ -311,6 +403,7 @@ M.scroll = debounce.throttle_trailing(
         local new_tween = ViewTween({
           winid = winid,
           duration = duration,
+          lock_cursor = lock_cursor,
           scroll_delta = delta,
         })
         M.cache.tweens[winid] = new_tween
@@ -364,7 +457,7 @@ M.scroll_actions = {
       local winln = utils.get_winline()
       local delta = winln - so - 1
       local scale = delta_time_scale and (math.abs(delta) / scroll_height) or 1
-      M.scroll(0, delta, duration * scale)
+      M.scroll(0, delta, duration * scale, true)
     end
   end,
   --- Emulates |zb|.
@@ -376,7 +469,7 @@ M.scroll_actions = {
       local winln = utils.get_winline()
       local delta = -(height - winln - so)
       local scale = delta_time_scale and (math.abs(delta) / scroll_height) or 1
-      M.scroll(0, delta, duration * scale)
+      M.scroll(0, delta, duration * scale, true)
     end
   end,
   --- Emulates |zz|.
@@ -388,7 +481,7 @@ M.scroll_actions = {
       local winln = utils.get_winline()
       local delta = -(height / 2 - winln)
       local scale = delta_time_scale and (math.abs(delta) / (scroll_height / 2)) or 1
-      M.scroll(0, delta, duration * scale)
+      M.scroll(0, delta, duration * scale, true)
     end
   end,
 }
