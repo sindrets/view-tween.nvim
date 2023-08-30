@@ -85,8 +85,8 @@ local function find_folds_range(winid, line_from, line_to)
   while (line_to - cur) * sign > 0 do
     fold_info = ffi.fold_info(winid, cur)
 
-    if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
-      fold_end = cur + fold_info.rem_lines - 1
+    if fold_info.start ~= 0 and fold_info.lines ~= 0 then
+      fold_end = cur + fold_info.lines - 1
 
       if not ret[fold_info.start] then ret[fold_info.start] = {} end
       if not ret[fold_end] then ret[fold_end] = {} end
@@ -96,7 +96,7 @@ local function find_folds_range(winid, line_from, line_to)
       if sign == -1 then
         fold_edge = fold_info.start
       else
-        fold_edge = cur + fold_info.rem_lines - 1
+        fold_edge = cur + fold_info.lines - 1
       end
       cur = fold_edge + sign
     else
@@ -122,8 +122,8 @@ local function find_folds_delta(winid, line_from, delta)
   for _ = 1, math.abs(delta) do
     fold_info = ffi.fold_info(winid, cur)
 
-    if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
-      fold_end = cur + fold_info.rem_lines - 1
+    if fold_info.start ~= 0 and fold_info.lines ~= 0 then
+      fold_end = cur + fold_info.lines - 1
 
       if not ret[fold_info.start] then ret[fold_info.start] = {} end
       if not ret[fold_end] then ret[fold_end] = {} end
@@ -133,7 +133,7 @@ local function find_folds_delta(winid, line_from, delta)
       if sign == -1 then
         fold_edge = fold_info.start
       else
-        fold_edge = cur + fold_info.rem_lines - 1
+        fold_edge = cur + fold_info.lines - 1
       end
       cur = fold_edge + sign
     else
@@ -159,7 +159,7 @@ function ViewTween:init(opt)
   self.done = false
 
   local fold_info_max = ffi.fold_info(self.winid, self.max_line)
-  if fold_info_max.start ~= 0 and fold_info_max.rem_lines ~= 0 then
+  if fold_info_max.start ~= 0 and fold_info_max.lines ~= 0 then
     self.max_line = fold_info_max.start
   end
 

@@ -151,11 +151,11 @@ function M.get_scroll_delta(winid, line_from, line_to)
     while (line_to - cur) * sign > 0 do
       local fold_info = ffi.fold_info(winid, cur)
 
-      if fold_info.start ~= 0 and fold_info.rem_lines ~= 0 then
+      if fold_info.start ~= 0 and fold_info.lines ~= 0 then
         if sign == -1 then
           fold_edge = fold_info.start
         else
-          fold_edge = cur + fold_info.rem_lines - 1
+          fold_edge = cur + fold_info.lines - 1
         end
         cur = fold_edge + sign
       else
